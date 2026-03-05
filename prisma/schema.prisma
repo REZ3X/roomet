@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ─── USER & AUTH ────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  username       String   @unique
+  displayName    String
+  passwordHash   String?
+  googleId       String?  @unique
+  avatarUrl      String?
+  avatarType     String   @default("google") // "google" | "custom"
+  bio            String?  @db.Text
+  emailVerified  Boolean  @default(false)
+  verifyToken    String?
+  verifyTokenExp DateTime?
+  publicKey      String?  @db.Text // RSA public key for E2E encryption
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  profile           UserProfile?
+  sessions          Session[]
+  messages          Message[]
+  roomsHosting      Room[]            @relation("RoomHost")
+  roomsCoHosting    Room[]            @relation("RoomCoHost")
+  roomParticipants  RoomParticipant[]
+  followers         Follow[]          @relation("Following")
+  following         Follow[]          @relation("Follower")
+  achievements      UserAchievement[]
+  invitesSent       RoomInvite[]      @relation("InviteSender")
+  invitesReceived   RoomInvite[]      @relation("InviteReceiver")
+  pollsCreated      Poll[]
+  activityLogs      RoomActivityLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique @db.VarChar(512)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── PROFILE & PROGRESSION ─────────────────────────────────
+
+model UserProfile {
+  id               String @id @default(cuid())
+  userId           String @unique
+  totalMessages    Int    @default(0)
+  totalRoomsJoined Int    @default(0)
+  totalRoomsHosted Int    @default(0)
+  totalTimeInRooms Int    @default(0) // seconds
+  totalFollowers   Int    @default(0)
+  totalFollowing   Int    @default(0)
+  level            Int    @default(1)
+  xp               Int    @default(0)
+  selectedBadge    String? 
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+}
+
+model Achievement {
+  id          String @id @default(cuid())
+  key         String @unique
+  name        String
+  description String @db.Text
+  icon        String 
+  category    String // "chat" | "room" | "social" | "time" | "special"
+  threshold   Int
+  xpReward    Int    @default(0)
+
+  users UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+}
+
+// ─── ROOMS ──────────────────────────────────────────────────
+
+model Room {
+  id          String   @id @default(cuid())
+  title       String
+  type        String   // "chatting" | "discussion" | "focus" | "study" | "hangout"
+  tag         String?
+  isPublic    Boolean  @default(true)
+  isLocked    Boolean  @default(false)
+  passwordHash String?
+  maxMembers  Int      @default(50)
+  hostId      String
+  coHostId    String?
+  inviteCode  String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  host         User              @relation("RoomHost", fields: [hostId], references: [id])
+  coHost       User?             @relation("RoomCoHost", fields: [coHostId], references: [id])
+  participants RoomParticipant[]
+  messages     Message[]
+  invites      RoomInvite[]
+  polls        Poll[]
+  encryptedKeys RoomEncryptedKey[]
+  activityLogs  RoomActivityLog[]
+}
+
+model RoomParticipant {
+  id        String    @id @default(cuid())
+  roomId    String
+  userId    String
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  isActive  Boolean   @default(true)
+  timeSpent Int       @default(0) // seconds in this room
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+// E2E: room symmetric key encrypted with each participant's public key
+model RoomEncryptedKey {
+  id             String @id @default(cuid())
+  roomId         String
+  userId         String
+  encryptedKey   String @db.Text // AES room key encrypted with user's RSA public key
+  createdAt      DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+// ─── MESSAGES & MEDIA ───────────────────────────────────────
+
+model Message {
+  id               String   @id @default(cuid())
+  roomId           String
+  senderId         String
+  type             String   @default("text") // "text" | "image" | "audio" | "video" | "document" | "system"
+  encryptedContent String   @db.Text // E2E encrypted payload
+  iv               String?  // AES-GCM initialization vector
+  mediaUrl         String?
+  mediaName        String?
+  mediaMimeType    String?
+  mediaSize        Int?
+  createdAt        DateTime @default(now())
+
+  room   Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id])
+}
+
+// ─── INVITES ────────────────────────────────────────────────
+
+model RoomInvite {
+  id         String   @id @default(cuid())
+  roomId     String
+  senderId   String
+  receiverId String
+  status     String   @default("pending") // "pending" | "accepted" | "declined"
+  createdAt  DateTime @default(now())
+
+  room     Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender   User @relation("InviteSender", fields: [senderId], references: [id])
+  receiver User @relation("InviteReceiver", fields: [receiverId], references: [id])
+}
+
+// ─── POLLS (Discussion rooms) ───────────────────────────────
+
+model Poll {
+  id        String       @id @default(cuid())
+  roomId    String
+  creatorId String
+  question  String
+  isActive  Boolean      @default(true)
+  expiresAt DateTime?
+  createdAt DateTime     @default(now())
+
+  room    Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  creator User         @relation(fields: [creatorId], references: [id])
+  options PollOption[]
+}
+
+model PollOption {
+  id     String     @id @default(cuid())
+  pollId String
+  text   String
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+}
+
+model PollVote {
+  id       String @id @default(cuid())
+  optionId String
+  voterId  String // voter user id
+
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, voterId])
+}
+
+// ─── ROOM ACTIVITY LOG ──────────────────────────────────────
+
+model RoomActivityLog {
+  id         String    @id @default(cuid())
+  userId     String
+  roomId     String
+  roomTitle  String
+  roomType   String
+  roomTag    String?
+  role       String    // "host" | "participant"
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+  duration   Int       @default(0) // seconds
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([userId, joinedAt])
+}
