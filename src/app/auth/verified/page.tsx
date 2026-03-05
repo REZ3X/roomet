@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { FaCheck } from "@/components/Icons";
 import ThemeToggle from "@/components/ThemeToggle";
 
-export default function VerifiedPage() {
+function VerifiedInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { loginWithToken } = useAuth();
@@ -61,5 +61,19 @@ export default function VerifiedPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function VerifiedPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[var(--bg-base)]">
+          <div className="w-5 h-5 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <VerifiedInner />
+    </Suspense>
   );
 }
