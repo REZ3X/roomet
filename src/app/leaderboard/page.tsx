@@ -95,10 +95,10 @@ export default function LeaderboardPage() {
           </Link>
           <div className="flex items-center gap-1 sm:gap-2">
             <Link
-              href="/leaderboard"
+              href="/"
               className="hidden sm:inline-flex px-3 py-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-md transition-colors"
             >
-              Leaderboard
+              Back
             </Link>
             {isLoggedIn ? (
               <Link
