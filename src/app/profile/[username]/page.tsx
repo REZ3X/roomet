@@ -71,7 +71,7 @@ export default function UserProfilePage() {
             ? { ...p, followersCount: ((p.followersCount as number) || 0) + 1 }
             : p,
         );
-        // Send follow notification
+
         if (profile.id && user) {
           emitFollowNotification({
             targetUserId: profile.id as string,

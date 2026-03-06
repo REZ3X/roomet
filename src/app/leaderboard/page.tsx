@@ -8,14 +8,18 @@ import {
   FaTrophy,
   FaSearch,
   FaArrowLeft,
+  FaArrowRight,
 } from "@/components/Icons";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState("xp");
   const [search, setSearch] = useState("");
+  const { user, loading: authLoading } = useAuth();
+  const isLoggedIn = !authLoading && !!user;
 
   const sortOptions = [
     { key: "xp", label: "XP" },
@@ -89,20 +93,37 @@ export default function LeaderboardPage() {
           >
             Roomet
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Link
+              href="/leaderboard"
+              className="hidden sm:inline-flex px-3 py-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-md transition-colors"
+            >
+              Leaderboard
+            </Link>
+            {isLoggedIn ? (
+              <Link
+                href="/dashboard"
+                className="px-4 py-1.5 text-[13px] font-medium bg-[var(--accent)] text-white rounded-md hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1.5"
+              >
+                Go to Dashboard <FaArrowRight size={10} />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/auth/login"
+                  className="px-3 py-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-md transition-colors"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/auth/register"
+                  className="px-4 py-1.5 text-[13px] font-medium bg-[var(--accent)] text-white rounded-md hover:bg-[var(--accent-hover)] transition-colors"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
             <ThemeToggle />
-            <Link
-              href="/auth/login"
-              className="text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              Login
-            </Link>
-            <Link
-              href="/auth/register"
-              className="text-[13px] px-3 py-1.5 btn-primary rounded-md"
-            >
-              Sign Up
-            </Link>
           </div>
         </div>
       </nav>

@@ -34,14 +34,12 @@ export async function POST(
     return badRequest("Room is full");
   }
 
-  // Check if already in room
   const existing = await prisma.roomParticipant.findUnique({
     where: { roomId_userId: { roomId, userId: user.id } },
   });
 
   if (existing?.isActive) return badRequest("Already in room");
 
-  // Check password for locked rooms
   if (room.isLocked && room.passwordHash) {
     const body = await req.json().catch(() => ({}));
     if (!body.password) return forbidden("Room is locked. Password required.");
@@ -51,7 +49,6 @@ export async function POST(
   }
 
   if (existing) {
-    // Rejoin
     await prisma.roomParticipant.update({
       where: { id: existing.id },
       data: { isActive: true, joinedAt: new Date(), leftAt: null },
@@ -62,7 +59,6 @@ export async function POST(
     });
   }
 
-  // Create activity log entry
   await prisma.roomActivityLog.create({
     data: {
       userId: user.id,
@@ -74,7 +70,6 @@ export async function POST(
     },
   });
 
-  // Update profile
   await prisma.userProfile.update({
     where: { userId: user.id },
     data: { totalRoomsJoined: { increment: 1 } },

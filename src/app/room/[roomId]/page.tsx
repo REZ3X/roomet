@@ -2,13 +2,21 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import RoomView from "@/components/RoomView";
+import RoomSidebar from "@/components/RoomSidebar";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [roomInfo, setRoomInfo] = useState<{
+    title: string;
+    icon?: string;
+    color?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -26,5 +34,29 @@ export default function RoomPage() {
 
   if (!user || !roomId) return null;
 
-  return <RoomView roomId={roomId} onLeave={() => router.push("/dashboard")} />;
+  return (
+    <div className="h-dvh bg-[var(--bg-base)] flex flex-col md:flex-row overflow-hidden">
+      <RoomSidebar
+        user={user}
+        activeRoom={roomInfo}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileSidebarOpen={mobileSidebarOpen}
+        onMobileSidebarClose={() => setMobileSidebarOpen(false)}
+        onLogout={async () => {
+          await logout();
+          router.push("/auth/login");
+        }}
+      />
+
+      <main className="flex-1 min-w-0 min-h-0 overflow-hidden">
+        <RoomView
+          roomId={roomId}
+          onLeave={() => router.push("/dashboard")}
+          onRoomLoaded={setRoomInfo}
+          onMenuClick={() => setMobileSidebarOpen(true)}
+        />
+      </main>
+    </div>
+  );
 }

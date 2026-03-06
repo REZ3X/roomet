@@ -38,12 +38,10 @@ export default function JoinByInvitePage() {
           if (data.room.isLocked) {
             setNeedsPassword(true);
           } else {
-            // Auto-join if not locked
             try {
               await roomAPI.join(token, data.room.id as string);
               router.push(`/room/${data.room.id}`);
             } catch (joinErr: unknown) {
-              // If already a member, just redirect
               router.push(`/room/${data.room.id}`);
             }
           }

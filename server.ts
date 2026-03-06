@@ -139,10 +139,23 @@ app.prepare().then(() => {
           }),
         );
 
+        let publicKey: string | null = null;
+        try {
+          const userRecord = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { publicKey: true },
+          });
+          publicKey = userRecord?.publicKey ?? null;
+        } catch {}
+
         io.to(roomId).emit("room-participants", participants);
-        socket
-          .to(roomId)
-          .emit("user-joined", { userId, username, displayName, avatarUrl });
+        socket.to(roomId).emit("user-joined", {
+          userId,
+          username,
+          displayName,
+          avatarUrl,
+          publicKey,
+        });
       },
     );
 
@@ -211,6 +224,17 @@ app.prepare().then(() => {
       "room-updated",
       (data: { roomId: string; update: Record<string, unknown> }) => {
         io.to(data.roomId).emit("room-update", data.update);
+      },
+    );
+
+    socket.on(
+      "room-key-distributed",
+      (data: { roomId: string; userIds: string[] }) => {
+        for (const uid of data.userIds) {
+          io.to(`user:${uid}`).emit("room-key-available", {
+            roomId: data.roomId,
+          });
+        }
       },
     );
 

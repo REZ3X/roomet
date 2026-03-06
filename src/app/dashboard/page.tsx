@@ -12,7 +12,9 @@ import {
   FaTimes,
   FaTrophy,
   FaBars,
+  DynamicIcon,
 } from "@/components/Icons";
+import { roomAPI } from "@/lib/api-client";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useSocket } from "@/context/SocketContext";
 import type { Tab, DashNotification } from "./types";
@@ -46,13 +48,44 @@ export default function DashboardPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { socket } = useSocket();
 
+  // ─── Active Rooms (rooms user is currently in) ───
+  const [activeRooms, setActiveRooms] = useState<
+    Array<{ id: string; title: string; icon?: string; color?: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await roomAPI.myRooms(token);
+        if (!cancelled) {
+          setActiveRooms(
+            data.rooms.map((r) => {
+              const feat = r.features as Record<string, unknown> | undefined;
+              return {
+                id: r.id as string,
+                title: r.title as string,
+                icon: feat?.icon as string | undefined,
+                color: feat?.color as string | undefined,
+              };
+            }),
+          );
+        }
+      } catch {}
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   // ─── Notification State ───
   const [notifications, setNotifications] = useState<DashNotification[]>([]);
   const [toasts, setToasts] = useState<DashNotification[]>([]);
   const [inviteRefreshCounter, setInviteRefreshCounter] = useState(0);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // Listen for real-time notifications
   useEffect(() => {
     if (!socket) return;
 
@@ -125,7 +158,6 @@ export default function DashboardPage() {
     };
   }, [socket]);
 
-  // Auto-dismiss toasts
   useEffect(() => {
     if (toasts.length === 0) return;
     const timer = setTimeout(() => {
@@ -142,7 +174,6 @@ export default function DashboardPage() {
     }
   }, [user, loading, router]);
 
-  // Persist active tab
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_TAB, activeTab);
   }, [activeTab]);
@@ -222,34 +253,77 @@ export default function DashboardPage() {
             {/* Navigation */}
             <nav className="flex-1 px-2 py-2 space-y-0.5">
               {navItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileSidebarOpen(false);
-                    if (item.id === "invites") {
-                      setNotifications((prev) =>
-                        prev.map((n) => ({ ...n, read: true })),
-                      );
-                    }
-                  }}
-                  className={`w-full flex items-center gap-2.5 rounded-md text-[13px] px-2 py-1.5 transition-colors ${
-                    activeTab === item.id
-                      ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                  }`}
-                >
-                  <span className="flex-shrink-0 relative">
-                    {item.icon}
-                    {item.id === "invites" && unreadCount > 0 && (
-                      <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-[var(--accent-coral)] text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                      </span>
-                    )}
-                  </span>
-                  <span className="truncate">{item.label}</span>
-                </button>
+                <div key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileSidebarOpen(false);
+                      if (item.id === "invites") {
+                        setNotifications((prev) =>
+                          prev.map((n) => ({ ...n, read: true })),
+                        );
+                      }
+                    }}
+                    className={`w-full flex items-center gap-2.5 rounded-md text-[13px] px-2 py-1.5 transition-colors ${
+                      activeTab === item.id
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    }`}
+                  >
+                    <span className="flex-shrink-0 relative">
+                      {item.icon}
+                      {item.id === "invites" && unreadCount > 0 && (
+                        <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-[var(--accent-coral)] text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
+                      )}
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                  {/* Active room sub-nav under Rooms */}
+                  {item.id === "rooms" && activeRooms.length > 0 && (
+                    <div className="ml-5 mt-0.5 space-y-0.5">
+                      {activeRooms.slice(0, 5).map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => {
+                            setMobileSidebarOpen(false);
+                            handleJoinRoom(r.id);
+                          }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] transition-colors"
+                        >
+                          <div
+                            className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                            style={{ background: r.color || "var(--accent)" }}
+                          >
+                            <DynamicIcon
+                              name={r.icon || "FaComments"}
+                              size={8}
+                              className="text-white"
+                            />
+                          </div>
+                          <span className="text-[12px] truncate">
+                            {r.title}
+                          </span>
+                        </button>
+                      ))}
+                      {activeRooms.length > 5 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("rooms");
+                            setMobileSidebarOpen(false);
+                          }}
+                          className="w-full text-left px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+                        >
+                          +{activeRooms.length - 5} more rooms →
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </nav>
 
@@ -352,36 +426,81 @@ export default function DashboardPage() {
         {/* Navigation */}
         <nav className="flex-1 px-2 py-2 space-y-0.5">
           {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                setActiveTab(item.id);
-                if (item.id === "invites") {
-                  setNotifications((prev) =>
-                    prev.map((n) => ({ ...n, read: true })),
-                  );
-                }
-              }}
-              className={`w-full flex items-center gap-2.5 rounded-md text-[13px] transition-colors ${sidebarCollapsed ? "justify-center px-0 py-1.5" : "px-2 py-1.5"} ${
-                activeTab === item.id
-                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              }`}
-              title={sidebarCollapsed ? item.label : undefined}
-            >
-              <span className="flex-shrink-0 relative">
-                {item.icon}
-                {item.id === "invites" && unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-[var(--accent-coral)] text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
+            <div key={item.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (item.id === "invites") {
+                    setNotifications((prev) =>
+                      prev.map((n) => ({ ...n, read: true })),
+                    );
+                  }
+                }}
+                className={`w-full flex items-center gap-2.5 rounded-md text-[13px] transition-colors ${sidebarCollapsed ? "justify-center px-0 py-1.5" : "px-2 py-1.5"} ${
+                  activeTab === item.id
+                    ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                }`}
+                title={sidebarCollapsed ? item.label : undefined}
+              >
+                <span className="flex-shrink-0 relative">
+                  {item.icon}
+                  {item.id === "invites" && unreadCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-[var(--accent-coral)] text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </span>
+                {!sidebarCollapsed && (
+                  <span className="truncate">{item.label}</span>
                 )}
-              </span>
-              {!sidebarCollapsed && (
-                <span className="truncate">{item.label}</span>
-              )}
-            </button>
+              </button>
+              {/* Active room sub-nav under Rooms */}
+              {item.id === "rooms" &&
+                !sidebarCollapsed &&
+                activeRooms.length > 0 && (
+                  <div className="ml-5 mt-0.5 space-y-0.5">
+                    {activeRooms.slice(0, 5).map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleJoinRoom(r.id)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        <div
+                          className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                          style={{ background: r.color || "var(--accent)" }}
+                        >
+                          <DynamicIcon
+                            name={r.icon || "FaComments"}
+                            size={8}
+                            className="text-white"
+                          />
+                        </div>
+                        <span className="text-[12px] truncate">{r.title}</span>
+                      </button>
+                    ))}
+                    {activeRooms.length > 5 && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("rooms")}
+                        className="w-full text-left px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        +{activeRooms.length - 5} more rooms →
+                      </button>
+                    )}
+                  </div>
+                )}
+              {/* Collapsed: show dot for active rooms */}
+              {item.id === "rooms" &&
+                sidebarCollapsed &&
+                activeRooms.length > 0 && (
+                  <div className="flex justify-center mt-0.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                  </div>
+                )}
+            </div>
           ))}
         </nav>
 

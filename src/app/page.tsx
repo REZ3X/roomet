@@ -28,9 +28,6 @@ export default function Home() {
             href="/"
             className="flex items-center gap-2 text-[15px] font-semibold text-[var(--text-primary)]"
           >
-            <div className="w-6 h-6 rounded-md bg-[var(--accent)] flex items-center justify-center">
-              <FaComments size={11} className="text-white" />
-            </div>
             Roomet
           </Link>
           <div className="flex items-center gap-1 sm:gap-2">

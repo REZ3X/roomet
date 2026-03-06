@@ -63,7 +63,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("Failed to generate key pair:", e);
         }
       } else if (!localStorage.getItem(PRIVATE_KEY_STORAGE)) {
-        // User has public key but no local private key - regenerate
         const keyPair = await generateKeyPair();
         localStorage.setItem(PRIVATE_KEY_STORAGE, keyPair.privateKey);
         await authAPI.storePublicKey(currentToken, keyPair.publicKey);
@@ -97,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -145,7 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setToken(newToken);
       localStorage.setItem(TOKEN_STORAGE, newToken);
-      // Fetch user data for this token
+
       authAPI
         .me(newToken)
         .then((data) => {
@@ -153,7 +151,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ensureKeyPair(newToken, data.user as unknown as User);
         })
         .catch(() => {
-          // Token might be invalid
           localStorage.removeItem(TOKEN_STORAGE);
           setToken(null);
         })

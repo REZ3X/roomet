@@ -17,7 +17,6 @@ export async function getAuthUser(req: NextRequest): Promise<AuthUser | null> {
   const payload = verifyToken(token);
   if (!payload) return null;
 
-  // Verify session exists
   const session = await prisma.session.findFirst({
     where: { token, expiresAt: { gt: new Date() } },
     include: { user: true },

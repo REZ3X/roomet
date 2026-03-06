@@ -18,7 +18,6 @@ async function apiFetch<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  // Only set content-type for non-FormData bodies
   if (fetchOptions.body && !(fetchOptions.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }

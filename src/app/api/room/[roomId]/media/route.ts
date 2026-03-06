@@ -34,7 +34,7 @@ export async function POST(
     const file = formData.get("file") as File | null;
     const encryptedContent = formData.get("encryptedContent") as string;
     const iv = formData.get("iv") as string;
-    // Original file metadata (before E2E encryption)
+
     const originalName =
       (formData.get("originalName") as string) || file?.name || "file";
     const originalMimeType =
@@ -46,15 +46,12 @@ export async function POST(
 
     if (!file) return badRequest("File is required");
 
-    // Check if this media type is allowed for this room type
-    // Use original MIME type for the check (the encrypted file is application/octet-stream)
     if (!canSendMediaType(room.type, originalMimeType)) {
       return forbidden(`This file type is not allowed in ${room.type} rooms`);
     }
 
     const saved = await saveFile(file);
 
-    // Determine message type from original MIME
     let type = "document";
     if (originalMimeType.startsWith("image/")) type = "image";
     else if (originalMimeType.startsWith("audio/")) type = "audio";
@@ -84,13 +81,12 @@ export async function POST(
       },
     });
 
-    // Update stats
     await prisma.userProfile.update({
       where: { userId: user.id },
       data: { totalMessages: { increment: 1 } },
     });
 
-    await addXP(user.id, 2); // 2 XP for media messages
+    await addXP(user.id, 2);
     await checkAndGrantAchievements(user.id);
 
     return success({ message }, 201);
