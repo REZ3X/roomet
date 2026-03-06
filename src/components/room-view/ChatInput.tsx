@@ -8,6 +8,7 @@ import {
   FaFile,
   FaMicrophoneAlt,
 } from "@/components/Icons";
+import VoiceRecorder from "@/components/room-view/VoiceRecorder";
 
 interface ChatInputProps {
   inputText: string;
@@ -16,7 +17,7 @@ interface ChatInputProps {
   onTyping: () => void;
   roomKey: string | null;
   features: Record<string, unknown> | null;
-
+  // File handling
   pendingFile: File | null;
   pendingPreview: string | null;
   captionText: string;
@@ -24,6 +25,12 @@ interface ChatInputProps {
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSendFile: () => void;
   onCancelFile: () => void;
+  // Upload progress
+  uploadProgress: number | null;
+  // Voice note
+  onSendVoiceNote: (blob: Blob, durationSec: number) => void;
+  isVoiceRecording: boolean;
+  onVoiceRecordingChange: (recording: boolean) => void;
 }
 
 export default function ChatInput({
@@ -40,13 +47,40 @@ export default function ChatInput({
   onFileSelect,
   onSendFile,
   onCancelFile,
+  uploadProgress,
+  onSendVoiceNote,
+  isVoiceRecording,
+  onVoiceRecordingChange,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasVoiceNotes = !!features?.voiceNotes;
 
   return (
     <>
+      {/* Upload progress bar */}
+      {uploadProgress !== null && (
+        <div className="px-4 py-2 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
+          <div className="flex items-center gap-2.5">
+            <div className="flex-1 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[var(--accent)] rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-mono text-[var(--text-muted)] min-w-[32px] text-right">
+              {uploadProgress}%
+            </span>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1">
+            {uploadProgress < 100
+              ? "Encrypting & uploading..."
+              : "Processing..."}
+          </p>
+        </div>
+      )}
+
       {/* Media Preview (before sending) */}
-      {pendingFile && (
+      {pendingFile && uploadProgress === null && (
         <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
           <div className="flex items-start gap-3">
             <div className="flex-shrink-0">
@@ -107,67 +141,90 @@ export default function ChatInput({
         </div>
       )}
 
-      {/* Input */}
-      <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-t border-[var(--border)]">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {!!(
-            features?.sendImages ||
-            features?.sendVideos ||
-            features?.sendDocuments ||
-            features?.sendAudio
-          ) && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept={[
-                  features?.sendImages ? "image/*" : "",
-                  features?.sendAudio || features?.voiceNotes ? "audio/*" : "",
-                  features?.sendVideos ? "video/*" : "",
-                  features?.sendDocuments
-                    ? ".pdf,.doc,.docx,.txt,.xlsx,.pptx,.zip,.rar"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(",")}
-                onChange={onFileSelect}
+      {/* Voice Recorder (when active — replaces the input row) */}
+      {isVoiceRecording && hasVoiceNotes && (
+        <VoiceRecorder
+          onSend={onSendVoiceNote}
+          onCancel={() => onVoiceRecordingChange(false)}
+          disabled={!roomKey}
+        />
+      )}
+
+      {/* Input row (hidden during voice recording) */}
+      {!isVoiceRecording && (
+        <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-t border-[var(--border)]">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {!!(
+              features?.sendImages ||
+              features?.sendVideos ||
+              features?.sendDocuments ||
+              features?.sendAudio
+            ) && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept={[
+                    features?.sendImages ? "image/*" : "",
+                    features?.sendAudio || features?.voiceNotes
+                      ? "audio/*"
+                      : "",
+                    features?.sendVideos ? "video/*" : "",
+                    features?.sendDocuments
+                      ? ".pdf,.doc,.docx,.txt,.xlsx,.pptx,.zip,.rar"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(",")}
+                  onChange={onFileSelect}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 hover:bg-[var(--bg-hover)] rounded-md transition-colors text-[var(--text-muted)] hover:text-[var(--accent)]"
+                >
+                  <FaPlus size={13} />
+                </button>
+              </>
+            )}
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => {
+                onInputChange(e.target.value);
+                onTyping();
+              }}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSend()}
+              placeholder="Type a message..."
+              className="flex-1 input-base px-2.5 sm:px-3 py-2 text-[13px]"
+            />
+
+            {/* Show mic button when no text, send button when there is text */}
+            {!inputText.trim() && hasVoiceNotes ? (
+              <VoiceRecorder
+                onSend={onSendVoiceNote}
+                onCancel={() => onVoiceRecordingChange(false)}
+                disabled={!roomKey || uploadProgress !== null}
               />
+            ) : (
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="p-2 hover:bg-[var(--bg-hover)] rounded-md transition-colors text-[var(--text-muted)] hover:text-[var(--accent)]"
+                onClick={onSend}
+                disabled={!inputText.trim() || !roomKey}
+                className="p-2 bg-[var(--accent)] rounded-md text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-30"
               >
-                <FaPlus size={13} />
+                <FaPaperPlane size={13} />
               </button>
-            </>
+            )}
+          </div>
+          {!roomKey && (
+            <p className="text-[11px] text-[var(--accent-amber)] mt-1 ml-1">
+              Setting up encryption...
+            </p>
           )}
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => {
-              onInputChange(e.target.value);
-              onTyping();
-            }}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSend()}
-            placeholder="Type a message..."
-            className="flex-1 input-base px-2.5 sm:px-3 py-2 text-[13px]"
-          />
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={!inputText.trim() || !roomKey}
-            className="p-2 bg-[var(--accent)] rounded-md text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-30"
-          >
-            <FaPaperPlane size={13} />
-          </button>
         </div>
-        {!roomKey && (
-          <p className="text-[11px] text-[var(--accent-amber)] mt-1 ml-1">
-            Setting up encryption...
-          </p>
-        )}
-      </div>
+      )}
     </>
   );
 }

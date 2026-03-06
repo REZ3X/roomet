@@ -86,6 +86,8 @@ export default function RoomView({
   const [captionText, setCaptionText] = useState("");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [roomElapsed, setRoomElapsed] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -498,6 +500,8 @@ export default function RoomView({
     if (!pendingFile || !token || !roomKey || !user) return;
 
     try {
+      setUploadProgress(0);
+
       const fileBuffer = await pendingFile.arrayBuffer();
       const encryptedBuffer = await encryptFileWithEmbeddedIV(
         fileBuffer,
@@ -530,7 +534,12 @@ export default function RoomView({
       formData.append("encryptedContent", ciphertext);
       formData.append("iv", iv);
 
-      const data = await chatAPI.uploadMedia(token, roomId, formData);
+      const data = await chatAPI.uploadMediaWithProgress(
+        token,
+        roomId,
+        formData,
+        setUploadProgress,
+      );
       const msg = data.message as unknown as Message;
       msg.decryptedContent = contentToEncrypt;
       setMessages((prev) => [...prev, msg]);
@@ -551,10 +560,69 @@ export default function RoomView({
       console.error("Upload failed:", error);
     }
 
+    setUploadProgress(null);
     if (pendingPreview) URL.revokeObjectURL(pendingPreview);
     setPendingFile(null);
     setPendingPreview(null);
     setCaptionText("");
+  };
+
+  const handleSendVoiceNote = async (blob: Blob, durationSec: number) => {
+    if (!token || !roomKey || !user) return;
+
+    try {
+      setUploadProgress(0);
+      setIsVoiceRecording(false);
+
+      // Encrypt the voice note
+      const buffer = await blob.arrayBuffer();
+      const encryptedBuffer = await encryptFileWithEmbeddedIV(buffer, roomKey);
+      const encryptedBlob = new Blob([encryptedBuffer], {
+        type: "application/octet-stream",
+      });
+      const fileName = `voice-note-${Date.now()}.enc`;
+      const encryptedFile = new File([encryptedBlob], fileName, {
+        type: "application/octet-stream",
+      });
+
+      const originalName = `voice-note-${durationSec}s.webm`;
+      const formData = new FormData();
+      formData.append("file", encryptedFile);
+      formData.append("originalName", originalName);
+      formData.append("originalMimeType", blob.type || "audio/webm");
+      formData.append("originalSize", String(blob.size));
+
+      const { ciphertext, iv } = await encryptMessage(originalName, roomKey);
+      formData.append("encryptedContent", ciphertext);
+      formData.append("iv", iv);
+
+      const data = await chatAPI.uploadMediaWithProgress(
+        token,
+        roomId,
+        formData,
+        setUploadProgress,
+      );
+      const msg = data.message as unknown as Message;
+      msg.decryptedContent = originalName;
+      setMessages((prev) => [...prev, msg]);
+      emitMessage(roomId, msg as unknown as Record<string, unknown>);
+
+      const roomParticipants = (room as Record<string, unknown>)
+        ?.participants as Array<Record<string, unknown>>;
+      if (roomParticipants) {
+        emitMessageNotification({
+          roomId,
+          roomTitle: (room as Record<string, unknown>)?.title as string,
+          senderName: user.displayName,
+          senderId: user.id,
+          participantIds: roomParticipants.map((p) => p.id as string),
+        });
+      }
+    } catch (error) {
+      console.error("Voice note upload failed:", error);
+    }
+
+    setUploadProgress(null);
   };
 
   const handleCancelFile = () => {
@@ -796,6 +864,10 @@ export default function RoomView({
           onFileSelect={handleFileSelect}
           onSendFile={handleSendFile}
           onCancelFile={handleCancelFile}
+          uploadProgress={uploadProgress}
+          onSendVoiceNote={handleSendVoiceNote}
+          isVoiceRecording={isVoiceRecording}
+          onVoiceRecordingChange={setIsVoiceRecording}
         />
       </div>
 

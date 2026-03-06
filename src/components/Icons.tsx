@@ -64,6 +64,9 @@ import {
   FaPowerOff,
   FaBars,
   FaChevronLeft,
+  FaStop,
+  FaTrashAlt,
+  FaCircle,
 } from "react-icons/fa";
 
 const iconMap: Record<
@@ -137,6 +140,9 @@ const iconMap: Record<
   FaPowerOff,
   FaBars,
   FaChevronLeft,
+  FaStop,
+  FaTrashAlt,
+  FaCircle,
 };
 
 export function DynamicIcon({
@@ -219,4 +225,7 @@ export {
   FaPowerOff,
   FaBars,
   FaChevronLeft,
+  FaStop,
+  FaTrashAlt,
+  FaCircle,
 };
