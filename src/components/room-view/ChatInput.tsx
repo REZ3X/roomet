@@ -16,7 +16,6 @@ interface ChatInputProps {
   onSend: () => void;
   onTyping: () => void;
   roomKey: string | null;
-  encryptionError: string | null;
   features: Record<string, unknown> | null;
   // File handling
   pendingFile: File | null;
@@ -40,7 +39,6 @@ export default function ChatInput({
   onSend,
   onTyping,
   roomKey,
-  encryptionError,
   features,
   pendingFile,
   pendingPreview,
@@ -221,10 +219,8 @@ export default function ChatInput({
             )}
           </div>
           {!roomKey && (
-            <p
-              className={`text-[11px] mt-1 ml-1 ${encryptionError ? "text-[var(--accent-red)]" : "text-[var(--accent-amber)]"}`}
-            >
-              {encryptionError || "Setting up encryption..."}
+            <p className="text-[11px] text-[var(--accent-amber)] mt-1 ml-1">
+              Setting up encryption...
             </p>
           )}
         </div>
