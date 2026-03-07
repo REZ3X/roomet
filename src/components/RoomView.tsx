@@ -143,6 +143,25 @@ export default function RoomView({
           }
         };
 
+        // If the host has no publicKey in participant list (e.g. just registered),
+        // re-fetch their actual publicKey from the current user record
+        const ensureHostKey = async (key: string) => {
+          const hostParticipant = participants.find(
+            (p) => (p.id as string) === user.id,
+          );
+          if (!hostParticipant?.publicKey) {
+            // Our publicKey might not be in the stale participants list yet;
+            // use the one from localStorage which is always authoritative
+            const storedPubKey = localStorage.getItem("roomet_public_key");
+            if (storedPubKey) {
+              const encrypted = await encryptRoomKeyForUser(key, storedPubKey);
+              await roomAPI.distributeKeys(token, roomId, [
+                { userId: user.id, encryptedKey: encrypted },
+              ]);
+            }
+          }
+        };
+
         if (roomData.encryptedRoomKey && privateKey) {
           try {
             derivedKey = await decryptRoomKey(
@@ -157,24 +176,35 @@ export default function RoomView({
             }
           } catch (decryptError) {
             console.warn("Room key decryption failed:", decryptError);
-            // Host: regenerate room key so the room isn't permanently stuck
             if (isHost) {
               derivedKey = await generateRoomKey();
               try {
                 await distributeToAll(derivedKey);
-              } catch {}
+                // Also ensure the host's own key is stored
+                await ensureHostKey(derivedKey);
+              } catch (distErr) {
+                console.warn("Key distribution failed:", distErr);
+                // Last resort: store at least the host's own key
+                try {
+                  await ensureHostKey(derivedKey);
+                } catch {}
+              }
             }
-            // Non-host: derivedKey stays null, polling effect will retry
           }
         } else if (roomData.isParticipant && isHost) {
           derivedKey = await generateRoomKey();
           try {
             await distributeToAll(derivedKey);
+            await ensureHostKey(derivedKey);
           } catch (keyError) {
             console.warn(
               "Key distribution failed, will retry on next load:",
               keyError,
             );
+            // Last resort: store at least the host's own key
+            try {
+              await ensureHostKey(derivedKey);
+            } catch {}
           }
         }
 

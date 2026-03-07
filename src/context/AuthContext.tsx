@@ -8,7 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { authAPI } from "@/lib/api-client";
-import { generateKeyPair } from "@/lib/encryption";
+import { generateKeyPair, derivePublicKeyFromPrivate } from "@/lib/encryption";
 
 interface User {
   id: string;
@@ -45,7 +45,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const PRIVATE_KEY_STORAGE = "roomet_private_key";
+const PUBLIC_KEY_STORAGE = "roomet_public_key";
 const TOKEN_STORAGE = "roomet_token";
+
+let ensureKeyPairRunning = false;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -54,18 +57,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ensureKeyPair = useCallback(
     async (currentToken: string, currentUser: User) => {
-      if (!currentUser.publicKey) {
-        try {
-          const keyPair = await generateKeyPair();
-          localStorage.setItem(PRIVATE_KEY_STORAGE, keyPair.privateKey);
-          await authAPI.storePublicKey(currentToken, keyPair.publicKey);
-        } catch (e) {
-          console.error("Failed to generate key pair:", e);
+      // Mutex: prevent concurrent execution which can cause key pair mismatches
+      if (ensureKeyPairRunning) return;
+      ensureKeyPairRunning = true;
+
+      try {
+        const storedPrivateKey = localStorage.getItem(PRIVATE_KEY_STORAGE);
+        const storedPublicKey = localStorage.getItem(PUBLIC_KEY_STORAGE);
+
+        if (storedPrivateKey && storedPublicKey) {
+          // We have a local key pair — ensure the server has the matching public key
+          if (currentUser.publicKey !== storedPublicKey) {
+            // Server public key doesn't match our local pair — re-upload
+            await authAPI.storePublicKey(currentToken, storedPublicKey);
+          }
+          return;
         }
-      } else if (!localStorage.getItem(PRIVATE_KEY_STORAGE)) {
+
+        if (storedPrivateKey && !storedPublicKey) {
+          // Migration: old private key exists but public key was never stored locally.
+          // Derive the matching public key from the private key to avoid regenerating.
+          const derivedPubKey =
+            await derivePublicKeyFromPrivate(storedPrivateKey);
+          localStorage.setItem(PUBLIC_KEY_STORAGE, derivedPubKey);
+          // Ensure the server has this exact public key
+          if (currentUser.publicKey !== derivedPubKey) {
+            await authAPI.storePublicKey(currentToken, derivedPubKey);
+          }
+          return;
+        }
+
+        // No keys at all — generate a fresh key pair.
+        // Upload public key FIRST — if this fails, we don't store locally,
+        // so next attempt will retry cleanly.
         const keyPair = await generateKeyPair();
-        localStorage.setItem(PRIVATE_KEY_STORAGE, keyPair.privateKey);
         await authAPI.storePublicKey(currentToken, keyPair.publicKey);
+        localStorage.setItem(PRIVATE_KEY_STORAGE, keyPair.privateKey);
+        localStorage.setItem(PUBLIC_KEY_STORAGE, keyPair.publicKey);
+      } catch (e) {
+        console.error("Failed to ensure key pair:", e);
+      } finally {
+        ensureKeyPairRunning = false;
       }
     },
     [],
@@ -117,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(data.token);
     setUser(data.user as unknown as User);
     localStorage.setItem(TOKEN_STORAGE, data.token);
+    await ensureKeyPair(data.token, data.user as unknown as User);
   };
 
   const logout = async () => {

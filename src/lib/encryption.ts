@@ -215,6 +215,40 @@ async function importAESKey(base64: string): Promise<CryptoKey> {
   );
 }
 
+// Derive the matching public key from a PKCS8 private key (base64)
+export async function derivePublicKeyFromPrivate(
+  privateKeyBase64: string,
+): Promise<string> {
+  const buffer = base64ToBuffer(privateKeyBase64);
+  // Import as extractable so we can get JWK
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "pkcs8",
+    buffer,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["decrypt"],
+  );
+  const jwk = await window.crypto.subtle.exportKey("jwk", cryptoKey);
+  // Build a public-key-only JWK (strip private components)
+  const pubJwk: JsonWebKey = {
+    kty: jwk.kty,
+    n: jwk.n,
+    e: jwk.e,
+    alg: "RSA-OAEP-256",
+    ext: true,
+    key_ops: ["encrypt"],
+  };
+  const pubKey = await window.crypto.subtle.importKey(
+    "jwk",
+    pubJwk,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["encrypt"],
+  );
+  const exported = await window.crypto.subtle.exportKey("spki", pubKey);
+  return bufferToBase64(exported);
+}
+
 // ─── Buffer conversion helpers ───
 
 export function bufferToBase64(buffer: ArrayBuffer): string {
