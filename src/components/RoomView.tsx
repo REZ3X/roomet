@@ -11,6 +11,7 @@ import {
   encryptRoomKeyForUser,
   decryptRoomKey,
   encryptFileWithEmbeddedIV,
+  isCryptoAvailable,
 } from "@/lib/encryption";
 import {
   DynamicIcon,
@@ -88,6 +89,7 @@ export default function RoomView({
   const [roomElapsed, setRoomElapsed] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [encryptionError, setEncryptionError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -119,7 +121,6 @@ export default function RoomView({
         });
 
         let derivedKey: string | null = null;
-        const privateKey = getPrivateKey();
         const roomData = data as Record<string, unknown>;
         const hostId = (roomData.host as Record<string, unknown>)?.id;
         const isHost = hostId === user.id;
@@ -127,42 +128,67 @@ export default function RoomView({
           Record<string, unknown>
         >;
 
-        const distributeToAll = async (key: string) => {
-          const keys: { userId: string; encryptedKey: string }[] = [];
-          for (const p of participants) {
-            if (p.publicKey) {
-              const encrypted = await encryptRoomKeyForUser(
-                key,
-                p.publicKey as string,
-              );
-              keys.push({ userId: p.id as string, encryptedKey: encrypted });
-            }
-          }
-          if (keys.length > 0) {
-            await roomAPI.distributeKeys(token, roomId, keys);
-          }
-        };
-
-        if (roomData.encryptedRoomKey && privateKey) {
-          derivedKey = await decryptRoomKey(
-            roomData.encryptedRoomKey as string,
-            privateKey,
+        // Check crypto availability (requires HTTPS or localhost)
+        if (!isCryptoAvailable()) {
+          setEncryptionError(
+            "Encryption requires a secure connection (HTTPS). Please use HTTPS or localhost.",
           );
+        } else {
+          const privateKey = getPrivateKey();
 
-          if (isHost && derivedKey) {
+          const distributeToAll = async (key: string) => {
+            const keys: { userId: string; encryptedKey: string }[] = [];
+            for (const p of participants) {
+              if (p.publicKey) {
+                const encrypted = await encryptRoomKeyForUser(
+                  key,
+                  p.publicKey as string,
+                );
+                keys.push({ userId: p.id as string, encryptedKey: encrypted });
+              }
+            }
+            if (keys.length > 0) {
+              await roomAPI.distributeKeys(token, roomId, keys);
+            }
+          };
+
+          if (roomData.encryptedRoomKey && privateKey) {
+            try {
+              derivedKey = await decryptRoomKey(
+                roomData.encryptedRoomKey as string,
+                privateKey,
+              );
+              if (isHost && derivedKey) {
+                try {
+                  await distributeToAll(derivedKey);
+                } catch {}
+              }
+            } catch (decryptError) {
+              console.warn(
+                "Failed to decrypt room key (key mismatch, likely new device):",
+                decryptError,
+              );
+              // Host: regenerate room key and redistribute
+              if (isHost) {
+                try {
+                  derivedKey = await generateRoomKey();
+                  await distributeToAll(derivedKey);
+                } catch (regenError) {
+                  console.warn("Failed to regenerate room key:", regenError);
+                }
+              }
+              // Non-host: derivedKey stays null, polling/socket will handle it
+            }
+          } else if (roomData.isParticipant && isHost) {
+            derivedKey = await generateRoomKey();
             try {
               await distributeToAll(derivedKey);
-            } catch {}
-          }
-        } else if (roomData.isParticipant && isHost) {
-          derivedKey = await generateRoomKey();
-          try {
-            await distributeToAll(derivedKey);
-          } catch (keyError) {
-            console.warn(
-              "Key distribution failed, will retry on next load:",
-              keyError,
-            );
+            } catch (keyError) {
+              console.warn(
+                "Key distribution failed, will retry on next load:",
+                keyError,
+              );
+            }
           }
         }
 
@@ -856,6 +882,7 @@ export default function RoomView({
           onSend={handleSend}
           onTyping={handleTypingInput}
           roomKey={roomKey}
+          encryptionError={encryptionError}
           features={features as Record<string, unknown> | null}
           pendingFile={pendingFile}
           pendingPreview={pendingPreview}

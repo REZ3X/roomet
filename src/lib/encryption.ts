@@ -2,6 +2,16 @@
 // The actual encryption/decryption happens client-side using Web Crypto API.
 // Server only stores encrypted data and encrypted room keys.
 
+// ─── Crypto availability check ───
+
+export function isCryptoAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!window.crypto?.subtle &&
+    window.isSecureContext
+  );
+}
+
 // ─── Client-side helpers (used in browser) ───
 
 export async function generateKeyPair(): Promise<{
