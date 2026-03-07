@@ -144,15 +144,27 @@ export default function RoomView({
         };
 
         if (roomData.encryptedRoomKey && privateKey) {
-          derivedKey = await decryptRoomKey(
-            roomData.encryptedRoomKey as string,
-            privateKey,
-          );
+          try {
+            derivedKey = await decryptRoomKey(
+              roomData.encryptedRoomKey as string,
+              privateKey,
+            );
 
-          if (isHost && derivedKey) {
-            try {
-              await distributeToAll(derivedKey);
-            } catch {}
+            if (isHost && derivedKey) {
+              try {
+                await distributeToAll(derivedKey);
+              } catch {}
+            }
+          } catch (decryptError) {
+            console.warn("Room key decryption failed:", decryptError);
+            // Host: regenerate room key so the room isn't permanently stuck
+            if (isHost) {
+              derivedKey = await generateRoomKey();
+              try {
+                await distributeToAll(derivedKey);
+              } catch {}
+            }
+            // Non-host: derivedKey stays null, polling effect will retry
           }
         } else if (roomData.isParticipant && isHost) {
           derivedKey = await generateRoomKey();

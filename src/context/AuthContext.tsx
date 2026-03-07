@@ -86,7 +86,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await ensureKeyPair(storedToken, data.user as unknown as User);
     } catch {
       localStorage.removeItem(TOKEN_STORAGE);
-      localStorage.removeItem(PRIVATE_KEY_STORAGE);
+      // Keep private key — removing it forces key regeneration on next login,
+      // which invalidates all existing encrypted room keys.
       setUser(null);
       setToken(null);
     } finally {
