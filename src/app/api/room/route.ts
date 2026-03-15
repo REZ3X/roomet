@@ -9,6 +9,12 @@ import {
 import { generateInviteCode, hashPassword } from "@/lib/auth";
 import { checkAndGrantAchievements } from "@/lib/progression";
 import { ROOM_TYPE_FEATURES, type RoomType } from "@/lib/room-types";
+import {
+  generateRoomKey,
+  serverEncryptKey,
+  serverDecryptKey,
+  serverEncryptForUser,
+} from "@/lib/server-crypto";
 
 // GET list rooms — ?view=mine returns user's active rooms, default returns public rooms
 export async function GET(req: NextRequest) {
@@ -171,6 +177,10 @@ export async function POST(req: NextRequest) {
 
     const inviteCode = generateInviteCode();
 
+    // Generate room key server-side and store encrypted
+    const roomKeyBase64 = generateRoomKey();
+    const serverEncryptedKey = serverEncryptKey(roomKeyBase64);
+
     const room = await prisma.room.create({
       data: {
         title,
@@ -181,8 +191,30 @@ export async function POST(req: NextRequest) {
         passwordHash,
         hostId: user.id,
         inviteCode,
+        serverEncryptedKey,
       },
     });
+
+    // Auto-distribute key to the host if they have a public key
+    if (user.publicKey) {
+      try {
+        const encryptedForHost = serverEncryptForUser(
+          roomKeyBase64,
+          user.publicKey,
+        );
+        await prisma.roomEncryptedKey.upsert({
+          where: { roomId_userId: { roomId: room.id, userId: user.id } },
+          update: { encryptedKey: encryptedForHost },
+          create: {
+            roomId: room.id,
+            userId: user.id,
+            encryptedKey: encryptedForHost,
+          },
+        });
+      } catch (e) {
+        console.warn("[Room Create] Failed to distribute key to host:", e);
+      }
+    }
 
     await prisma.roomParticipant.create({
       data: { roomId: room.id, userId: user.id },

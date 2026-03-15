@@ -9,6 +9,7 @@ import {
   badRequest,
 } from "@/lib/api-helpers";
 import { ROOM_TYPE_FEATURES, type RoomType } from "@/lib/room-types";
+import { serverDecryptKey, serverEncryptForUser } from "@/lib/server-crypto";
 
 // GET room details
 export async function GET(
@@ -67,6 +68,25 @@ export async function GET(
       where: { roomId_userId: { roomId, userId: user.id } },
     });
     encryptedRoomKey = keyRecord?.encryptedKey || null;
+
+    // Auto-distribute from server copy if user has no key yet
+    if (!encryptedRoomKey && room.serverEncryptedKey && user.publicKey) {
+      try {
+        const roomKeyBase64 = serverDecryptKey(room.serverEncryptedKey);
+        const encryptedForUser = serverEncryptForUser(
+          roomKeyBase64,
+          user.publicKey,
+        );
+        await prisma.roomEncryptedKey.upsert({
+          where: { roomId_userId: { roomId, userId: user.id } },
+          update: { encryptedKey: encryptedForUser },
+          create: { roomId, userId: user.id, encryptedKey: encryptedForUser },
+        });
+        encryptedRoomKey = encryptedForUser;
+      } catch (e) {
+        console.warn("[Room GET] Auto key distribution failed:", e);
+      }
+    }
   }
 
   return success({

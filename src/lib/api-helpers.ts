@@ -7,6 +7,7 @@ export interface AuthUser {
   email: string;
   username: string;
   displayName: string;
+  publicKey: string | null;
 }
 
 export async function getAuthUser(req: NextRequest): Promise<AuthUser | null> {
@@ -29,6 +30,7 @@ export async function getAuthUser(req: NextRequest): Promise<AuthUser | null> {
     email: session.user.email,
     username: session.user.username,
     displayName: session.user.displayName,
+    publicKey: session.user.publicKey ?? null,
   };
 }
 

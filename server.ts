@@ -156,6 +156,13 @@ app.prepare().then(() => {
           avatarUrl,
           publicKey,
         });
+
+        if (publicKey) {
+          socket.to(roomId).emit("distribute-key-request", {
+            userId,
+            publicKey,
+          });
+        }
       },
     );
 

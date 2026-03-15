@@ -220,7 +220,6 @@ export async function derivePublicKeyFromPrivate(
   privateKeyBase64: string,
 ): Promise<string> {
   const buffer = base64ToBuffer(privateKeyBase64);
-  // Import as extractable so we can get JWK
   const cryptoKey = await window.crypto.subtle.importKey(
     "pkcs8",
     buffer,

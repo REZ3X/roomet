@@ -118,6 +118,7 @@ model Room {
   hostId      String
   coHostId    String?
   inviteCode  String   @unique
+  serverEncryptedKey String? @db.Text // Room AES key encrypted with server secret
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

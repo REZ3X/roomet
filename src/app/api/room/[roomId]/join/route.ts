@@ -10,6 +10,7 @@ import {
 } from "@/lib/api-helpers";
 import { verifyPassword } from "@/lib/auth";
 import { checkAndGrantAchievements } from "@/lib/progression";
+import { serverDecryptKey, serverEncryptForUser } from "@/lib/server-crypto";
 
 export async function POST(
   req: NextRequest,
@@ -76,6 +77,24 @@ export async function POST(
   });
 
   await checkAndGrantAchievements(user.id);
+
+  // Auto-distribute room key to the joining user
+  if (room.serverEncryptedKey && user.publicKey) {
+    try {
+      const roomKeyBase64 = serverDecryptKey(room.serverEncryptedKey);
+      const encryptedForUser = serverEncryptForUser(
+        roomKeyBase64,
+        user.publicKey,
+      );
+      await prisma.roomEncryptedKey.upsert({
+        where: { roomId_userId: { roomId, userId: user.id } },
+        update: { encryptedKey: encryptedForUser },
+        create: { roomId, userId: user.id, encryptedKey: encryptedForUser },
+      });
+    } catch (e) {
+      console.warn("[Room Join] Auto key distribution failed:", e);
+    }
+  }
 
   return success({ message: "Joined room" });
 }

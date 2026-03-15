@@ -22,8 +22,21 @@ export async function POST(
   const room = await prisma.room.findUnique({ where: { id: roomId } });
   if (!room) return notFound("Room not found");
 
-  if (room.hostId !== user.id && room.coHostId !== user.id) {
-    return forbidden("Only host/co-host can distribute room keys");
+  // Allow any active participant who already holds a key (or the host/co-host)
+  const isHostOrCoHost = room.hostId === user.id || room.coHostId === user.id;
+  if (!isHostOrCoHost) {
+    const participant = await prisma.roomParticipant.findUnique({
+      where: { roomId_userId: { roomId, userId: user.id } },
+    });
+    if (!participant?.isActive) {
+      return forbidden("Only active participants can distribute room keys");
+    }
+    const hasKey = await prisma.roomEncryptedKey.findUnique({
+      where: { roomId_userId: { roomId, userId: user.id } },
+    });
+    if (!hasKey) {
+      return forbidden("You must hold a room key to distribute keys");
+    }
   }
 
   try {
@@ -61,7 +74,7 @@ export async function GET(
     where: { roomId_userId: { roomId, userId: user.id } },
   });
 
-  if (!keyRecord) return notFound("No room key found");
+  if (!keyRecord) return success({ encryptedKey: null });
 
   return success({ encryptedKey: keyRecord.encryptedKey });
 }

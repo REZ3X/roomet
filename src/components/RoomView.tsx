@@ -7,7 +7,6 @@ import { chatAPI, roomAPI, pollAPI, profileAPI } from "@/lib/api-client";
 import {
   encryptMessage,
   decryptMessage,
-  generateRoomKey,
   encryptRoomKeyForUser,
   decryptRoomKey,
   encryptFileWithEmbeddedIV,
@@ -121,90 +120,17 @@ export default function RoomView({
         let derivedKey: string | null = null;
         const privateKey = getPrivateKey();
         const roomData = data as Record<string, unknown>;
-        const hostId = (roomData.host as Record<string, unknown>)?.id;
-        const isHost = hostId === user.id;
-        const participants = roomData.participants as Array<
-          Record<string, unknown>
-        >;
 
-        const distributeToAll = async (key: string) => {
-          const keys: { userId: string; encryptedKey: string }[] = [];
-          for (const p of participants) {
-            if (p.publicKey) {
-              const encrypted = await encryptRoomKeyForUser(
-                key,
-                p.publicKey as string,
-              );
-              keys.push({ userId: p.id as string, encryptedKey: encrypted });
-            }
-          }
-          if (keys.length > 0) {
-            await roomAPI.distributeKeys(token, roomId, keys);
-          }
-        };
-
-        // If the host has no publicKey in participant list (e.g. just registered),
-        // re-fetch their actual publicKey from the current user record
-        const ensureHostKey = async (key: string) => {
-          const hostParticipant = participants.find(
-            (p) => (p.id as string) === user.id,
-          );
-          if (!hostParticipant?.publicKey) {
-            // Our publicKey might not be in the stale participants list yet;
-            // use the one from localStorage which is always authoritative
-            const storedPubKey = localStorage.getItem("roomet_public_key");
-            if (storedPubKey) {
-              const encrypted = await encryptRoomKeyForUser(key, storedPubKey);
-              await roomAPI.distributeKeys(token, roomId, [
-                { userId: user.id, encryptedKey: encrypted },
-              ]);
-            }
-          }
-        };
-
+        // Server handles key generation & distribution.
+        // Client just needs to decrypt the per-user encrypted key.
         if (roomData.encryptedRoomKey && privateKey) {
           try {
             derivedKey = await decryptRoomKey(
               roomData.encryptedRoomKey as string,
               privateKey,
             );
-
-            if (isHost && derivedKey) {
-              try {
-                await distributeToAll(derivedKey);
-              } catch {}
-            }
           } catch (decryptError) {
             console.warn("Room key decryption failed:", decryptError);
-            if (isHost) {
-              derivedKey = await generateRoomKey();
-              try {
-                await distributeToAll(derivedKey);
-                // Also ensure the host's own key is stored
-                await ensureHostKey(derivedKey);
-              } catch (distErr) {
-                console.warn("Key distribution failed:", distErr);
-                // Last resort: store at least the host's own key
-                try {
-                  await ensureHostKey(derivedKey);
-                } catch {}
-              }
-            }
-          }
-        } else if (roomData.isParticipant && isHost) {
-          derivedKey = await generateRoomKey();
-          try {
-            await distributeToAll(derivedKey);
-            await ensureHostKey(derivedKey);
-          } catch (keyError) {
-            console.warn(
-              "Key distribution failed, will retry on next load:",
-              keyError,
-            );
-            // Last resort: store at least the host's own key
-            try {
-              await ensureHostKey(derivedKey);
-            } catch {}
           }
         }
 
@@ -281,12 +207,12 @@ export default function RoomView({
     decryptAll();
   }, [roomKey]);
 
+  // Fallback: if room key is missing (legacy rooms without server key),
+  // try polling the keys endpoint
   useEffect(() => {
     if (roomKey || !room || !user || !token) return;
 
     const roomData = room as Record<string, unknown>;
-    const hostId = (roomData.host as Record<string, unknown>)?.id;
-    if (hostId === user.id) return;
     if (!roomData.isParticipant) return;
 
     let cancelled = false;
@@ -294,7 +220,7 @@ export default function RoomView({
       const privateKey = getPrivateKey();
       if (!privateKey) return;
 
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 10; i++) {
         if (cancelled) return;
         await new Promise((r) => setTimeout(r, 2000));
         if (cancelled) return;
@@ -318,18 +244,15 @@ export default function RoomView({
     };
   }, [room, roomKey, user, token, roomId]);
 
+  // Any participant who holds the room key distributes it to new joiners
   useEffect(() => {
-    if (!socket || !roomKey || !user || !token || !room) return;
+    if (!socket || !roomKey || !user || !token) return;
 
-    const roomData = room as Record<string, unknown>;
-    const hostId = (roomData.host as Record<string, unknown>)?.id;
-    if (hostId !== user.id) return;
-
-    const handleUserJoinedKey = async (data: {
+    const handleDistributeKeyRequest = async (data: {
       userId: string;
-      publicKey?: string;
+      publicKey: string;
     }) => {
-      if (!data.publicKey) return;
+      if (data.userId === user.id) return; // Don't distribute to ourselves
       try {
         const encrypted = await encryptRoomKeyForUser(roomKey, data.publicKey);
         await roomAPI.distributeKeys(token, roomId, [
@@ -341,11 +264,11 @@ export default function RoomView({
       }
     };
 
-    socket.on("user-joined", handleUserJoinedKey);
+    socket.on("distribute-key-request", handleDistributeKeyRequest);
     return () => {
-      socket.off("user-joined", handleUserJoinedKey);
+      socket.off("distribute-key-request", handleDistributeKeyRequest);
     };
-  }, [socket, roomKey, user, token, room, roomId]);
+  }, [socket, roomKey, user, token, roomId]);
 
   useEffect(() => {
     if (!socket || roomKey || !token) return;
@@ -753,6 +676,38 @@ export default function RoomView({
     return (
       <div className="flex items-center justify-center h-full bg-[var(--bg-base)]">
         <div className="w-5 h-5 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Encryption setup overlay
+  if (!roomKey && (room as Record<string, unknown>).isParticipant) {
+    return (
+      <div className="flex items-center justify-center h-full bg-[var(--bg-base)]">
+        <div className="flex flex-col items-center gap-4 p-8 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] shadow-xl max-w-sm mx-4 text-center">
+          <div className="relative">
+            <div className="w-14 h-14 rounded-full bg-[var(--accent)]/10 flex items-center justify-center">
+              <FaLock size={22} className="text-[var(--accent)]" />
+            </div>
+            <div className="absolute inset-0 w-14 h-14 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">
+              Setting up encryption
+            </h3>
+            <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+              Establishing a secure connection to this room.
+              This usually takes a moment...
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleBack}
+            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors mt-1"
+          >
+            ← Go back
+          </button>
+        </div>
       </div>
     );
   }
