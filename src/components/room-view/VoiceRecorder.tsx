@@ -63,14 +63,13 @@ export default function VoiceRecorder({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const TYPES = [
-        "audio/mp4",
-        "audio/webm;codecs=opus",
-        "audio/ogg;codecs=opus",
-        "audio/webm",
-        "audio/mpeg",
-        "",
-      ];
+      // Use webm for Chrome/Brave (if it can play it), otherwise mp4 (for Safari)
+      const canPlayWebM = new Audio().canPlayType("audio/webm") !== "";
+      
+      const TYPES = canPlayWebM 
+        ? ["audio/webm;codecs=opus", "audio/webm", ""] 
+        : ["audio/mp4", "audio/aac", ""];
+        
       const mimeType =
         TYPES.find((t) => t === "" || MediaRecorder.isTypeSupported(t)) || "";
 
