@@ -550,11 +550,14 @@ export default function RoomView({
         type: "application/octet-stream",
       });
 
-      const originalName = `voice-note-${durationSec}s.webm`;
+      const extMatch = blob.type.match(/audio\/([^;]+)/);
+      const ext = extMatch ? extMatch[1].replace("x-matroska", "mkv") : "webm";
+      const originalName = `voice-note-${durationSec}s.${ext}`;
+      
       const formData = new FormData();
       formData.append("file", encryptedFile);
       formData.append("originalName", originalName);
-      formData.append("originalMimeType", blob.type || "audio/webm");
+      formData.append("originalMimeType", blob.type || `audio/${ext}`);
       formData.append("originalSize", String(blob.size));
 
       const { ciphertext, iv } = await encryptMessage(originalName, roomKey);

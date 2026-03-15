@@ -63,12 +63,21 @@ export default function VoiceRecorder({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Prefer webm opus, fall back to whatever is available
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
+      const TYPES = [
+        "audio/mp4",
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/webm",
+        "audio/mpeg",
+        "",
+      ];
+      const mimeType =
+        TYPES.find((t) => t === "" || MediaRecorder.isTypeSupported(t)) || "";
 
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
